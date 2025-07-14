@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { GoogleMap, Marker } from '@react-google-maps/api'
+import { GoogleMap, Marker, DirectionsRenderer } from '@react-google-maps/api'
 import { loadGomapsScript } from '../utils/loadGomapsScript'
 
 const containerStyle = {
@@ -14,10 +14,12 @@ const center = {
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-const LiveTracking = () => {
-    const [ currentPosition, setCurrentPosition ] = useState(center);
+const LiveTracking = ({ pickupCoords, destinationCoords }) => {
+    const [ currentPosition, setCurrentPosition ] = useState(null); // Start as null
     const [ scriptLoaded, setScriptLoaded ] = useState(false);
     const [ mapOptions, setMapOptions ] = useState({});
+    const [ loadingLocation, setLoadingLocation ] = useState(true);
+    const [ directions, setDirections ] = useState(null);
 
     useEffect(() => {
         loadGomapsScript(apiKey)
@@ -34,26 +36,57 @@ const LiveTracking = () => {
     }, []);
 
     useEffect(() => {
-        navigator.geolocation.getCurrentPosition((position) => {
-            const { latitude, longitude } = position.coords;
-            setCurrentPosition({
-                lat: latitude,
-                lng: longitude
-            });
-        });
-
-        const watchId = navigator.geolocation.watchPosition((position) => {
-            const { latitude, longitude } = position.coords;
-            setCurrentPosition({
-                lat: latitude,
-                lng: longitude
-            });
-        });
-
-        return () => navigator.geolocation.clearWatch(watchId);
-    }, []);
+        if (pickupCoords && destinationCoords && scriptLoaded && window.google) {
+            const directionsService = new window.google.maps.DirectionsService();
+            directionsService.route(
+                {
+                    origin: pickupCoords,
+                    destination: destinationCoords,
+                    travelMode: window.google.maps.TravelMode.DRIVING,
+                },
+                (result, status) => {
+                    if (status === 'OK') {
+                        setDirections(result);
+                    } else {
+                        setDirections(null);
+                    }
+                }
+            );
+        } else {
+            setDirections(null);
+        }
+    }, [pickupCoords, destinationCoords, scriptLoaded]);
 
     useEffect(() => {
+        if (!pickupCoords) {
+            navigator.geolocation.getCurrentPosition((position) => {
+                const { latitude, longitude } = position.coords;
+                setCurrentPosition({
+                    lat: latitude,
+                    lng: longitude
+                });
+                setLoadingLocation(false);
+            }, () => {
+                setLoadingLocation(false);
+            });
+
+            const watchId = navigator.geolocation.watchPosition((position) => {
+                const { latitude, longitude } = position.coords;
+                setCurrentPosition({
+                    lat: latitude,
+                    lng: longitude
+                });
+            });
+
+            return () => navigator.geolocation.clearWatch(watchId);
+        } else {
+            setCurrentPosition(pickupCoords);
+            setLoadingLocation(false);
+        }
+    }, [pickupCoords]);
+
+    useEffect(() => {
+        if (!currentPosition) return;
         const updatePosition = () => {
             navigator.geolocation.getCurrentPosition((position) => {
                 const { latitude, longitude } = position.coords;
@@ -64,12 +97,11 @@ const LiveTracking = () => {
             });
         };
 
-        updatePosition();
         const intervalId = setInterval(updatePosition, 1000);
         return () => clearInterval(intervalId);
-    }, []);
+    }, [currentPosition]);
 
-    if (!scriptLoaded) return <div>Loading map...</div>;
+    if (!scriptLoaded || loadingLocation || !currentPosition) return <div className='w-full h-full flex items-center justify-center text-lg'>Loading map...</div>;
 
     return (
         <GoogleMap
@@ -78,7 +110,8 @@ const LiveTracking = () => {
             zoom={15}
             options={mapOptions}
         >
-            <Marker position={currentPosition} />
+            {!directions && <Marker position={currentPosition} />}
+            {directions && <DirectionsRenderer directions={directions} />}
         </GoogleMap>
     )
 }

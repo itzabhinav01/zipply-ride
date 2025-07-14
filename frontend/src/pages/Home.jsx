@@ -34,6 +34,9 @@ const Home = () => {
     const [ fare, setFare ] = useState({})
     const [ vehicleType, setVehicleType ] = useState(null)
     const [ ride, setRide ] = useState(null)
+    const [showMapModal, setShowMapModal] = useState(false);
+    const [pickupCoords, setPickupCoords] = useState(null);
+    const [destinationCoords, setDestinationCoords] = useState(null);
 
     const navigate = useNavigate()
 
@@ -57,6 +60,35 @@ const Home = () => {
         setWaitingForDriver(false)
         navigate('/riding', { state: { ride } }) // Updated navigate to include ride data
     })
+
+    useEffect(() => {
+        const fetchCoords = async () => {
+            if (pickup && destination) {
+                try {
+                    const token = localStorage.getItem('token');
+                    const [pickupRes, destRes] = await Promise.all([
+                        axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-coordinates`, {
+                            params: { address: pickup },
+                            headers: { Authorization: `Bearer ${token}` }
+                        }),
+                        axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-coordinates`, {
+                            params: { address: destination },
+                            headers: { Authorization: `Bearer ${token}` }
+                        })
+                    ]);
+                    setPickupCoords({ lat: pickupRes.data.ltd, lng: pickupRes.data.lng });
+                    setDestinationCoords({ lat: destRes.data.ltd, lng: destRes.data.lng });
+                } catch (err) {
+                    setPickupCoords(null);
+                    setDestinationCoords(null);
+                }
+            } else {
+                setPickupCoords(null);
+                setDestinationCoords(null);
+            }
+        };
+        fetchCoords();
+    }, [pickup, destination]);
 
 
     const handlePickupChange = async (e) => {
@@ -200,11 +232,19 @@ const Home = () => {
     return (
         <div className='h-screen relative overflow-hidden'>
             <img className='w-16 absolute left-5 top-5' src="https://upload.wikimedia.org/wikipedia/commons/c/cc/Uber_logo_2018.png" alt="" />
-            <div className='h-screen w-screen'>
-                {/* image for temporary use  */}
-                <LiveTracking />
+            {/* See Whole Map Button */}
+            <div className='absolute left-1/2 -translate-x-1/2 top-5 z-20'>
+                <button
+                    className='bg-white border border-gray-300 px-4 py-2 rounded-lg shadow hover:bg-gray-100 transition'
+                    onClick={() => setShowMapModal(true)}
+                >
+                    See Whole Map
+                </button>
             </div>
-            <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+            <div className='h-screen w-screen'>
+                <LiveTracking pickupCoords={pickupCoords} destinationCoords={destinationCoords} />
+            </div>
+            <div className='flex flex-col justify-end h-screen absolute top-0 w-full'>
                 <div className='h-[30%] p-6 bg-white relative'>
                     <h5 ref={panelCloseRef} onClick={() => {
                         setPanelOpen(false)
@@ -286,6 +326,22 @@ const Home = () => {
                     setWaitingForDriver={setWaitingForDriver}
                     waitingForDriver={waitingForDriver} />
             </div>
+            {/* Map Modal Popup */}
+            {showMapModal && (
+                <div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60'>
+                    <div className='relative w-[90vw] h-[90vh] bg-white rounded-lg shadow-lg flex flex-col'>
+                        <button
+                            className='absolute left-1/2 -translate-x-1/2 top-4 bg-gray-200 hover:bg-gray-300 rounded-full px-5 py-1 text-lg font-bold z-10'
+                            onClick={() => setShowMapModal(false)}
+                        >
+                            ×
+                        </button>
+                        <div className='flex-1 rounded-lg overflow-hidden'>
+                            <LiveTracking pickupCoords={pickupCoords} destinationCoords={destinationCoords} />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
